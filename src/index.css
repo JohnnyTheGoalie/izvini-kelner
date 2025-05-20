@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+:root {
+  --color-primary: #E76F51;
+  --color-secondary: #2A9D8F;
+  --color-background: #F4F1EE;
+  --color-card: #FFFFFF;
+  --color-text-primary: #1B1B1B;
+  --color-text-secondary: #6B6B6B;
+}
+body{
+    font-weight: 500;
+}
