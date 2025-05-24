@@ -1,78 +1,242 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import OrderCard from "../components/OrderCard";
 import WaiterCall from "../components/WaiterCall";
-import BillRequest from "../components/BillRequest";
 import WaiterCallOverlay from "../components/WaiterCallOverlay";
-import CustomerOnlineCard from "../components/CustomerOnlineCard";
+import OrderOverlay from "../components/OrderOverlay";
+
+interface Addon {
+  addon_id: number;
+  addon_name: string;
+  addon_price: number;
+}
+
+interface Item {
+  item_id: number;
+  item_quantity: number;
+  item_price: number;
+  item_name: string;
+  item_category: string;
+  item_subcategory: string;
+  item_rank: number;
+  order_id: number;
+  added: Addon[];
+  omitted: Addon[];
+}
+
+type OrdersByTable = Record<number, Record<number, Item[]>>;
+type WaiterCalls = Record<number, string>; // tableNumber -> timestamp
 
 const WaiterHome: React.FC = () => {
+  const [orders, setOrders] = useState<OrdersByTable>({});
+  const [overlayOrdersTable, setOverlayOrdersTable] = useState<number | null>(null);
+  const [waiterCalls, setWaiterCalls] = useState<WaiterCalls>({});
   const [overlayTable, setOverlayTable] = useState<number | null>(null);
 
-  const handleOpenOverlay = (tableNumber: number) => {
-    setOverlayTable(tableNumber);
+  const fetchOrders = async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch("http://95.180.38.118:8000/kelner/order/get_active_orders", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to fetch orders");
+
+      const data = await response.json();
+      const tableOrders: OrdersByTable = {};
+
+      for (const obj of data) {
+        for (const key in obj) {
+          const tableNumber = parseInt(key);
+          const items: Item[] = obj[key];
+          const ordersById: Record<number, Item[]> = {};
+          for (const item of items) {
+            if (!ordersById[item.order_id]) {
+              ordersById[item.order_id] = [];
+            }
+            ordersById[item.order_id].push(item);
+          }
+          tableOrders[tableNumber] = ordersById;
+        }
+      }
+
+      setOrders(tableOrders);
+    } catch (err) {
+      console.error("Error fetching orders:", err);
+    }
   };
 
-  const handleConfirm = () => {
-    // Add your logic for handling confirmation (e.g., remove the waiter call)
-    setOverlayTable(null);
+  const pollWaiterCalls = async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch("http://95.180.38.118:8000/kelner/notification/fetch_status", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to fetch waiter calls");
+
+      const data = await response.json();
+      const activeCalls: WaiterCalls = {};
+
+      for (const obj of data) {
+        for (const tableStr in obj) {
+          const call = obj[tableStr];
+          if (call.status === "Waiter") {
+            activeCalls[parseInt(tableStr)] = call.timestamp;
+          }
+        }
+      }
+
+      setWaiterCalls(activeCalls);
+    } catch (err) {
+      console.error("Error polling waiter calls:", err);
+    }
   };
 
-  const handleCancel = () => {
-    setOverlayTable(null);
+  useEffect(() => {
+    fetchOrders();
+    pollWaiterCalls();
+    const orderInterval = setInterval(fetchOrders, 20000);
+    const callInterval = setInterval(pollWaiterCalls, 5000);
+
+    return () => {
+      clearInterval(orderInterval);
+      clearInterval(callInterval);
+    };
+  }, []);
+
+  const handleAcceptOrder = async (orderId: number) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const url = `http://95.180.38.118:8000/kelner/order/clear_table?table_id=${overlayOrdersTable}&order_id=${orderId}`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Unknown error");
+
+      setOverlayOrdersTable(null);
+      await fetchOrders();
+    } catch (error) {
+      console.error("Error accepting order:", error);
+    }
+  };
+
+  const handleAcceptAllOrders = async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const url = `http://95.180.38.118:8000/kelner/order/clear_table?table_id=${overlayOrdersTable}`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Unknown error");
+
+      setOverlayOrdersTable(null);
+      await fetchOrders();
+    } catch (error) {
+      console.error("Error accepting all orders:", error);
+    }
+  };
+
+  const handleRejectOrder = async (orderId: number) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const url = `http://95.180.38.118:8000/kelner/order/drop_order?order_id=${orderId}`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Unknown error");
+
+      setOverlayOrdersTable(null);
+      await fetchOrders();
+    } catch (error) {
+      console.error("Error rejecting order:", error);
+    }
+  };
+
+
+  const handleConfirmWaiterCall = async (tableId: number) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(`http://95.180.38.118:8000/kelner/notification/clear_status?table_id=${tableId}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Unknown error");
+
+      const updatedCalls = { ...waiterCalls };
+      delete updatedCalls[tableId];
+      setWaiterCalls(updatedCalls);
+      setOverlayTable(null);
+      await pollWaiterCalls();
+    } catch (error) {
+      console.error("Failed to clear waiter call:", error);
+    }
+  };
+
+
+  const formatTimeAgo = (timestamp: string) => {
+    const diffMs = Date.now() - new Date(timestamp).getTime();
+    const mins = Math.floor(diffMs / 60000).toString().padStart(2, "0");
+    const secs = Math.floor((diffMs % 60000) / 1000).toString().padStart(2, "0");
+    return `${mins}:${secs}`;
   };
 
   return (
     <div className="bg-[var(--color-background)] flex flex-col items-center py-14">
-      <div className="w-full max-w-5xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4 w-full max-w-6xl px-4">
+
+        {Object.entries(orders).map(([tableNumber, ordersById]) => (
+          <OrderCard
+            key={`order-${tableNumber}`}
+            tableNumber={parseInt(tableNumber)}
+            items={Object.values(ordersById).flat()}
+            timer="00:00"
+            onClick={() => setOverlayOrdersTable(parseInt(tableNumber))}
+          />
+        ))}
+
+        {Object.entries(waiterCalls).map(([tableNumberStr, timestamp]) => {
+          const tableNumber = parseInt(tableNumberStr);
+          return (
+            <WaiterCall
+              key={`waiter-${tableNumber}`}
+              tableNumber={tableNumber}
+              timeAgo={formatTimeAgo(timestamp)}
+              onClick={() => setOverlayTable(tableNumber)}
+            />
+          );
+        })}
       </div>
 
-      <div className="w-full max-w-5xl px-4 py-2 text-center text-gray-500">
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-2 w-full max-w-11/12 px-2 py-2">
-        {/* Make WaiterCall clickable */}
-        <div onClick={() => handleOpenOverlay(5)} className="cursor-pointer">
-          <WaiterCall tableNumber={5} timeAgo="01:23" />
-        </div>
-
-        {/* Other components */}
-        <OrderCard
-          tableNumber={3}
-          items={[
-            { name: "Coke", addons: ["-ice"] },
-            { name: "Pepsi" },
-            { name: "Chicken Sandwich", addons: ["+fries"] },
-          ]}
-          timer="00:00"
-          totalPrice="$18.50"
+      {overlayOrdersTable !== null && (
+        <OrderOverlay
+          tableNumber={overlayOrdersTable}
+          orders={orders[overlayOrdersTable]}
+          onClose={() => setOverlayOrdersTable(null)}
+          onAcceptOrder={handleAcceptOrder}
+          onRejectOrder={handleRejectOrder}
+          onAcceptAll={handleAcceptAllOrders}
         />
+      )}
 
-        <BillRequest
-          tableNumber={4}
-          total={32.5}
-          tip={5}
-          method="card"
-          timeAgo="03:21"
-        />
-
-        <CustomerOnlineCard tableNumber={8} timeAgo="00:15" />
-        <CustomerOnlineCard tableNumber={8} timeAgo="00:15" />
-        <CustomerOnlineCard tableNumber={8} timeAgo="00:15" />
-        <CustomerOnlineCard tableNumber={8} timeAgo="00:15" />
-        <CustomerOnlineCard tableNumber={8} timeAgo="00:15" />
-        <CustomerOnlineCard tableNumber={8} timeAgo="00:15" />
-        <CustomerOnlineCard tableNumber={8} timeAgo="00:15" />
-        
-
-        {/* Additional OrderCards... */}
-      </div>
-
-      {/* Conditionally show the overlay */}
       {overlayTable !== null && (
         <WaiterCallOverlay
           tableNumber={overlayTable}
-          onConfirm={handleConfirm}
-          onCancel={handleCancel}
+          onConfirm={() => {
+            handleConfirmWaiterCall(overlayTable);
+            setOverlayTable(null);
+          }}
+          onCancel={() => setOverlayTable(null)}
         />
       )}
     </div>
