@@ -3,6 +3,7 @@ import OrderCard from "../components/OrderCard";
 import WaiterCall from "../components/WaiterCall";
 import WaiterCallOverlay from "../components/WaiterCallOverlay";
 import OrderOverlay from "../components/OrderOverlay";
+import BillRequest from "../components/BillRequest";
 
 interface Addon {
   addon_id: number;
@@ -35,7 +36,7 @@ const WaiterHome: React.FC = () => {
   const fetchOrders = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch("http://95.180.38.118:8000/kelner/order/get_active_orders", {
+      const response = await fetch("http://46.240.186.243:8000/kelner/order/get_active_orders", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error("Failed to fetch orders");
@@ -67,7 +68,7 @@ const WaiterHome: React.FC = () => {
   const pollWaiterCalls = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch("http://95.180.38.118:8000/kelner/notification/fetch_status", {
+      const response = await fetch("http://46.240.186.243:8000/kelner/notification/fetch_status", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error("Failed to fetch waiter calls");
@@ -77,12 +78,18 @@ const WaiterHome: React.FC = () => {
 
       for (const obj of data) {
         for (const tableStr in obj) {
-          const call = obj[tableStr];
-          if (call.status === "Waiter") {
-            activeCalls[parseInt(tableStr)] = call.timestamp;
+          const callList = obj[tableStr];
+          if (Array.isArray(callList)) {
+            for (const call of callList) {
+              if (call.status === "Waiter") {
+                activeCalls[parseInt(tableStr)] = call.timestamp;
+                break; // Only need the first waiter call per table
+              }
+            }
           }
         }
-      }
+    }
+
 
       setWaiterCalls(activeCalls);
     } catch (err) {
@@ -105,7 +112,7 @@ const WaiterHome: React.FC = () => {
   const handleAcceptOrder = async (orderId: number) => {
     try {
       const token = localStorage.getItem("authToken");
-      const url = `http://95.180.38.118:8000/kelner/order/clear_table?table_id=${overlayOrdersTable}&order_id=${orderId}`;
+      const url = `http://46.240.186.243:8000/kelner/order/clear_table?table_id=${overlayOrdersTable}&order_id=${orderId}`;
       const response = await fetch(url, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -124,7 +131,7 @@ const WaiterHome: React.FC = () => {
   const handleAcceptAllOrders = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      const url = `http://95.180.38.118:8000/kelner/order/clear_table?table_id=${overlayOrdersTable}`;
+      const url = `http://46.240.186.243:8000/kelner/order/clear_table?table_id=${overlayOrdersTable}`;
       const response = await fetch(url, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -143,7 +150,7 @@ const WaiterHome: React.FC = () => {
   const handleRejectOrder = async (orderId: number) => {
     try {
       const token = localStorage.getItem("authToken");
-      const url = `http://95.180.38.118:8000/kelner/order/drop_order?order_id=${orderId}`;
+      const url = `http://46.240.186.243:8000/kelner/order/drop_order?order_id=${orderId}`;
       const response = await fetch(url, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -163,7 +170,7 @@ const WaiterHome: React.FC = () => {
   const handleConfirmWaiterCall = async (tableId: number) => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch(`http://95.180.38.118:8000/kelner/notification/clear_status?table_id=${tableId}`, {
+      const response = await fetch(`http://46.240.186.243:8000/kelner/notification/clear_status?table_id=${tableId}&status=Waiter`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -228,7 +235,7 @@ const WaiterHome: React.FC = () => {
           onAcceptAll={handleAcceptAllOrders}
         />
       )}
-
+      <BillRequest tableNumber={0} total={0} tip={0} method={"cash"} timeAgo={""} />
       {overlayTable !== null && (
         <WaiterCallOverlay
           tableNumber={overlayTable}

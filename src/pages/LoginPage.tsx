@@ -16,7 +16,7 @@ const LoginPage: React.FC = () => {
 
   const handleLogin = async () => {
     try {
-      const response = await fetch("http://95.180.38.118:8000/kelner/login", {
+      const response = await fetch("http://46.240.186.243:8000/kelner/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
