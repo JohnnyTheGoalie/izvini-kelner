@@ -35,7 +35,7 @@ const OrderCard: React.FC<OrderCardProps> = ({ tableNumber, items, timer = "00:0
 
       <div className="mb-2">
         {items.map((item, index) => (
-          <div key={index} className="text-sm text-gray-800 pl-4 mb-2">
+          <div key={index} className="text-md text-gray-800 font-semibold pl-4 mb-2">
             • {item.item_quantity} × {item.item_name}
             {item.added.length > 0 && (
               <span className="ml-1 text-green-600">

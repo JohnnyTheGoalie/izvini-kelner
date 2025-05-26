@@ -3,7 +3,8 @@ import OrderCard from "../components/OrderCard";
 import WaiterCall from "../components/WaiterCall";
 import WaiterCallOverlay from "../components/WaiterCallOverlay";
 import OrderOverlay from "../components/OrderOverlay";
-import BillRequest from "../components/BillRequest";
+import BillCard from "../components/BillCard";
+import BillOverlay from "../components/BillOverlay";
 
 interface Addon {
   addon_id: number;
@@ -32,6 +33,9 @@ const WaiterHome: React.FC = () => {
   const [overlayOrdersTable, setOverlayOrdersTable] = useState<number | null>(null);
   const [waiterCalls, setWaiterCalls] = useState<WaiterCalls>({});
   const [overlayTable, setOverlayTable] = useState<number | null>(null);
+  const [pendingBills, setPendingBills] = useState<Record<number, { total: number; tip: number; bill_type: string }>>({});
+  const [overlayBillTable, setOverlayBillTable] = useState<number | null>(null);
+
 
   const fetchOrders = async () => {
     try {
@@ -97,15 +101,41 @@ const WaiterHome: React.FC = () => {
     }
   };
 
+  const fetchBills = async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch("http://46.240.186.243:8000/kelner/bill/get_pending_bills", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to fetch bills");
+
+      const data = await response.json();
+      const billMap: Record<number, { total: number; tip: number; bill_type: string }> = {};
+      for (const obj of data) {
+        for (const tableId in obj) {
+          billMap[parseInt(tableId)] = obj[tableId];
+        }
+      }
+      setPendingBills(billMap);
+    } catch (err) {
+      console.error("Error fetching bills:", err);
+    }
+  };
+
+
   useEffect(() => {
     fetchOrders();
     pollWaiterCalls();
-    const orderInterval = setInterval(fetchOrders, 20000);
-    const callInterval = setInterval(pollWaiterCalls, 5000);
+    fetchBills();
+    const orderInterval = setInterval(fetchOrders, 2000);
+    const callInterval = setInterval(pollWaiterCalls, 2000);
+    const billInterval = setInterval(fetchBills, 2000);
+
 
     return () => {
       clearInterval(orderInterval);
       clearInterval(callInterval);
+      clearInterval(billInterval);
     };
   }, []);
 
@@ -190,6 +220,29 @@ const WaiterHome: React.FC = () => {
     }
   };
 
+  const handleConfirmBill = async (tableId: number) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const url = `http://46.240.186.243:8000/kelner/bill/clear_pending_bill/?table_id=${tableId}`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Unknown error");
+
+      // Remove the bill from the state
+      const updatedBills = { ...pendingBills };
+      delete updatedBills[tableId];
+      setPendingBills(updatedBills);
+    } catch (error) {
+      console.error("Failed to confirm bill:", error);
+    }
+  };
+
 
   const formatTimeAgo = (timestamp: string) => {
     const diffMs = Date.now() - new Date(timestamp).getTime();
@@ -197,6 +250,8 @@ const WaiterHome: React.FC = () => {
     const secs = Math.floor((diffMs % 60000) / 1000).toString().padStart(2, "0");
     return `${mins}:${secs}`;
   };
+
+  
 
   return (
     <div className="bg-[var(--color-background)] flex flex-col items-center py-14">
@@ -223,19 +278,34 @@ const WaiterHome: React.FC = () => {
             />
           );
         })}
-      </div>
 
-      {overlayOrdersTable !== null && (
-        <OrderOverlay
-          tableNumber={overlayOrdersTable}
-          orders={orders[overlayOrdersTable]}
-          onClose={() => setOverlayOrdersTable(null)}
-          onAcceptOrder={handleAcceptOrder}
-          onRejectOrder={handleRejectOrder}
-          onAcceptAll={handleAcceptAllOrders}
+        {Object.entries(pendingBills).map(([tableNumberStr, bill]) => {
+          const tableNumber = parseInt(tableNumberStr);
+          return (
+            <BillCard
+              key={`bill-${tableNumber}`}
+              tableNumber={tableNumber}
+              total={bill.total}
+              tip={bill.tip}
+              method={bill.bill_type}
+              onClick={() => setOverlayBillTable(tableNumber)}
+            />
+          );
+        })}
+      </div>
+      {overlayBillTable !== null && pendingBills[overlayBillTable] && (
+        <BillOverlay
+          tableNumber={overlayBillTable}
+          total={pendingBills[overlayBillTable].total}
+          tip={pendingBills[overlayBillTable].tip}
+          method={pendingBills[overlayBillTable].bill_type}
+          onClose={() => setOverlayBillTable(null)}
+          onConfirm={() => {
+            setOverlayBillTable(null);
+            handleConfirmBill(overlayBillTable);
+          }}
         />
       )}
-      <BillRequest tableNumber={0} total={0} tip={0} method={"cash"} timeAgo={""} />
       {overlayTable !== null && (
         <WaiterCallOverlay
           tableNumber={overlayTable}
@@ -246,6 +316,18 @@ const WaiterHome: React.FC = () => {
           onCancel={() => setOverlayTable(null)}
         />
       )}
+
+      {overlayOrdersTable !== null && orders[overlayOrdersTable] && (
+        <OrderOverlay
+          tableNumber={overlayOrdersTable}
+          orders={orders[overlayOrdersTable]}
+          onClose={() => setOverlayOrdersTable(null)}
+          onAcceptOrder={handleAcceptOrder}
+          onRejectOrder={handleRejectOrder}
+          onAcceptAll={handleAcceptAllOrders}
+        />
+      )}
+
     </div>
   );
 };

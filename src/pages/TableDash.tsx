@@ -25,6 +25,7 @@ const initialTables: Table[] = [
 ];
 
 const zones: Zone[] = ["indoor", "garden", "balcony"];
+const GRID_RESOLUTION = 70;
 
 const TableManager: React.FC = () => {
   const [tables, setTables] = useState<Table[]>(initialTables);
@@ -42,13 +43,17 @@ const TableManager: React.FC = () => {
     return Math.max(0, ...tables.map((t) => t.id)) + 1;
   };
 
+  const snapToGrid = (value: number) => {
+    return Math.round(value / GRID_RESOLUTION) * GRID_RESOLUTION;
+  };
+
   const handleAddPoint = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!editMode) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
     const point = {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: snapToGrid(e.clientX - rect.left),
+      y: snapToGrid(e.clientY - rect.top),
     };
 
     if (editModeType === "table") {
