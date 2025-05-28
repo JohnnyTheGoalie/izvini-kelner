@@ -22,7 +22,7 @@ const WaiterCall: React.FC<WaiterCallProps> = ({ tableNumber, timeAgo, onClick }
           </div>
         </div>
         <div className="text-base font-bold">
-          🚨 Waiter called
+          🚨 Pozvan Konobar
         </div>
       </div>
     </div>

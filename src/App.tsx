@@ -26,16 +26,18 @@ const App: React.FC = () => {
         className="fixed top-0 left-0 w-full z-50 px-4 py-3 flex items-center justify-center space-x-8"
         style={{ backgroundColor: "var(--color-primary)" }}
       >
+        <div className="flex items-center space-x-10 m-auto">
         <Banner />
         <Link to="/home" className="text-white hover:text-gray-200 transition font-semibold">
-          Waiter Dashboard
+          Panel za Konobare
         </Link>
         <Link to="/tables" className="text-white hover:text-gray-200 transition font-semibold">
-          Table Dashboard
+          Panel za Stolove
         </Link>
         <Link to="/menu" className="text-white hover:text-gray-200 transition font-semibold">
-          Menu Dashboard
+          Izmena Menija
         </Link>
+        </div>
         <button
           onClick={() => {
             localStorage.removeItem("authToken");

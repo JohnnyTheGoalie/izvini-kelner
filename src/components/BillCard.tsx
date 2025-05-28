@@ -24,11 +24,13 @@ const BillCard: React.FC<BillCardProps> = ({ tableNumber, total, tip, method, on
           {tableNumber}
         </div>
       </div>
-      <div className="text-sm font-bold">Bill Requested</div>
-      <div className="text-md">Total: ${total.toFixed(2)}</div>
-      <div className="text-md">Tip: ${tip.toFixed(2)}</div>
-      <div className="text-md font-semibold">Total Due: ${finalAmount.toFixed(2)}</div>
-      <div className="text-xl uppercase mt-1">{method}</div>
+      <div className="text-sm font-bold">Račun zatražen</div>
+      <div className="text-md">Račun: {total.toFixed(2)}</div>
+      <div className="text-md">Bakšiš: {tip.toFixed(2)}</div>
+      <div className="text-md font-semibold">Ukupno: {finalAmount.toFixed(2)}</div>
+      <div className="bg-white mt-2 text-green-700 text-2xl uppercase font-semibold rounded-xl px-4 py-2 mb-2 inline-block shadow">
+        {method}
+      </div>
     </div>
   );
 };

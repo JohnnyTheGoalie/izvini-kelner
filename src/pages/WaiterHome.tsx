@@ -5,6 +5,7 @@ import WaiterCallOverlay from "../components/WaiterCallOverlay";
 import OrderOverlay from "../components/OrderOverlay";
 import BillCard from "../components/BillCard";
 import BillOverlay from "../components/BillOverlay";
+import { useWaiterSocket } from "../hooks/useWaiterSocket";
 
 interface Addon {
   addon_id: number;
@@ -38,36 +39,95 @@ const WaiterHome: React.FC = () => {
 
 
   const fetchOrders = async () => {
-    try {
-      const token = localStorage.getItem("authToken");
-      const response = await fetch("http://46.240.186.243:8000/kelner/order/get_active_orders", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) throw new Error("Failed to fetch orders");
+  try {
+    const token = localStorage.getItem("authToken");
+    const response = await fetch("http://46.240.186.243:8000/kelner/order/get_active_orders", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-      const data = await response.json();
-      const tableOrders: OrdersByTable = {};
+    if (!response.ok) throw new Error("Failed to fetch orders");
+
+    const data = await response.json();
+    const tableOrders: OrdersByTable = {};
+
+    for (const obj of data) {
+      for (const key in obj) {
+        const tableNumber = parseInt(key);
+        const items: Item[] = obj[key];
+        const ordersById: Record<number, Item[]> = {};
+        for (const item of items) {
+          if (!ordersById[item.order_id]) {
+            ordersById[item.order_id] = [];
+          }
+          ordersById[item.order_id].push(item);
+        }
+        tableOrders[tableNumber] = ordersById;
+      }
+    }
+
+    setOrders(tableOrders);
+  } catch (err) {
+    console.error("Error fetching orders:", err);
+  }
+};
+
+const fetchSpecificOrder = async (tableId: number, orderId: number) => {
+  try {
+    const token = localStorage.getItem("authToken");
+    const response = await fetch("http://46.240.186.243:8000/kelner/order/get_active_orders", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ table_id: tableId, order_id: orderId }),
+    });
+
+    if (!response.ok) throw new Error("Failed to fetch specific order");
+
+    const data = await response.json();
+    setOrders((prevOrders) => {
+      const updatedOrders = { ...prevOrders };
 
       for (const obj of data) {
         for (const key in obj) {
           const tableNumber = parseInt(key);
           const items: Item[] = obj[key];
-          const ordersById: Record<number, Item[]> = {};
-          for (const item of items) {
-            if (!ordersById[item.order_id]) {
-              ordersById[item.order_id] = [];
-            }
-            ordersById[item.order_id].push(item);
+
+          if (!updatedOrders[tableNumber]) {
+            updatedOrders[tableNumber] = {};
           }
-          tableOrders[tableNumber] = ordersById;
+
+          for (const item of items) {
+            const orderId = item.order_id;
+            if (!updatedOrders[tableNumber][orderId]) {
+              updatedOrders[tableNumber][orderId] = [];
+            }
+
+            const existingItems = updatedOrders[tableNumber][orderId];
+            const exists = existingItems.some((i) => i.item_id === item.item_id);
+            if (!exists) {
+              updatedOrders[tableNumber][orderId] = [...existingItems, item];
+            }
+          }
         }
       }
 
-      setOrders(tableOrders);
-    } catch (err) {
-      console.error("Error fetching orders:", err);
-    }
-  };
+      return { ...updatedOrders }; // new reference to trigger React render
+    });
+  } catch (err) {
+    console.error("Error fetching specific order:", err);
+  }
+};
+
+
+
+
+
 
   const pollWaiterCalls = async () => {
     try {
@@ -127,17 +187,39 @@ const WaiterHome: React.FC = () => {
     fetchOrders();
     pollWaiterCalls();
     fetchBills();
-    const orderInterval = setInterval(fetchOrders, 2000);
-    const callInterval = setInterval(pollWaiterCalls, 2000);
-    const billInterval = setInterval(fetchBills, 2000);
+    //const orderInterval = setInterval(fetchOrders, 2000);
+    //const callInterval = setInterval(pollWaiterCalls, 2000);
+    //const billInterval = setInterval(fetchBills, 2000);
 
 
-    return () => {
-      clearInterval(orderInterval);
-      clearInterval(callInterval);
-      clearInterval(billInterval);
-    };
+    /*return () => {
+      //clearInterval(orderInterval);
+      //clearInterval(callInterval);
+      //clearInterval(billInterval);
+    };*/
   }, []);
+
+
+  useWaiterSocket({
+    onWaiterCall: (tableId) => {
+      setWaiterCalls((prev) => ({
+        ...prev,
+        [tableId]: new Date().toISOString(),
+      }));
+    },
+    onBillRequested: (tableId, total, tip, billType) => {
+      setPendingBills((prev) => ({
+        ...prev,
+        [tableId]: { total, tip, bill_type: billType },
+      }));
+    },
+    onNewOrder: async ({ order_id, table_id }) => {
+      await fetchSpecificOrder(table_id, order_id);
+    },
+  });
+
+
+
 
   const handleAcceptOrder = async (orderId: number) => {
     try {
@@ -177,10 +259,10 @@ const WaiterHome: React.FC = () => {
     }
   };
 
-  const handleRejectOrder = async (orderId: number) => {
+  const handleRejectOrder = async (orderId: number, tableId: number) => {
     try {
       const token = localStorage.getItem("authToken");
-      const url = `http://46.240.186.243:8000/kelner/order/drop_order?order_id=${orderId}`;
+      const url = `http://46.240.186.243:8000/kelner/order/drop_order?order_id=${orderId}&table_id=${tableId}`;
       const response = await fetch(url, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -256,6 +338,14 @@ const WaiterHome: React.FC = () => {
   return (
     <div className="bg-[var(--color-background)] flex flex-col items-center py-14">
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4 w-full max-w-6xl px-4">
+        {Object.keys(orders).length === 0 &&
+          Object.keys(waiterCalls).length === 0 &&
+          Object.keys(pendingBills).length === 0 && (
+          <div className="text-center text-gray-500 w-full col-span-full py-8 text-lg">
+              Trenutno nema porudžbina, poziva ili računa na čekanju.
+          </div>
+        )}
+
 
         {Object.entries(orders).map(([tableNumber, ordersById]) => (
           <OrderCard

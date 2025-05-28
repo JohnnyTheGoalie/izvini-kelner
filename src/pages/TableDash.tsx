@@ -1,238 +1,385 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { createObject, createTable, createZone, deleteObject, deleteTable, deleteZone, fetchObjects, fetchTables, fetchZones } from "../apiMap";
+import TableInfoOverlay from "../components/TableInfoOverlay";
+import { useNavigate } from "react-router-dom";
 
-export type TableState = "available" | "ordering" | "reserved" | "occupied";
-export type Zone = "indoor" | "garden" | "balcony";
-
-export type Table = {
-  id: number;
-  x: number;
-  y: number;
-  z: Zone;
-  state: TableState;
-};
-
-const stateColors: Record<TableState, string> = {
-  available: "bg-green-500",
-  ordering: "bg-red-500",
-  reserved: "bg-yellow-500",
-  occupied: "bg-blue-500",
-};
-
-const initialTables: Table[] = [
-  { id: 1, x: 50, y: 60, z: "indoor", state: "available" },
-  { id: 2, x: 150, y: 90, z: "garden", state: "reserved" },
-  { id: 3, x: 250, y: 120, z: "balcony", state: "occupied" },
-];
-
-const zones: Zone[] = ["indoor", "garden", "balcony"];
-const GRID_RESOLUTION = 70;
-
-const TableManager: React.FC = () => {
-  const [tables, setTables] = useState<Table[]>(initialTables);
-  const [selectedZone, setSelectedZone] = useState<Zone>("indoor");
+const TableDash: React.FC = () => {
   const [editMode, setEditMode] = useState(false);
-  const [customId, setCustomId] = useState<number | null>(null);
-  const [editModeType, setEditModeType] = useState<"table" | "object">("table");
-  const [objectName, setObjectName] = useState("");
-  const [objectPoints, setObjectPoints] = useState<{ x: number; y: number }[]>([]);
-  const [objects, setObjects] = useState<
-    { name: string; x1: number; y1: number; x2: number; y2: number; z: Zone }[]
+  const [zones, setZones] = useState<{ zone_id: number; zone_name: string }[]>([]);
+  const [activeZone, setActiveZone] = useState<number | null>(null);
+  const [tables, setTables] = useState<
+    { table_id: number; table_number: number; zone_id: number; x: number; y: number }[]
   >([]);
+  const [newTableNumber, setNewTableNumber] = useState<number>(0);
+  const [editType, setEditType] = useState<string | null>(null);
+  const [newZoneName, setNewZoneName] = useState<string>("");
+  const [objects, setObjects] = useState<
+    { object_id: number; zone_id: number; object_name: string; x1: number; y1: number; x2: number; y2: number }[]
+  >([]);
+  const [objectName, setObjectName] = useState<string>("");
+  const [objectClickPoints, setObjectClickPoints] = useState<{ x: number; y: number }[]>([]);
+  const [selectedTableNumber, setSelectedTableNumber] = useState<number | null>(null);
 
-  const getNextId = () => {
-    return Math.max(0, ...tables.map((t) => t.id)) + 1;
-  };
+  //INACTIVE
+  const navigate = useNavigate();
 
-  const snapToGrid = (value: number) => {
-    return Math.round(value / GRID_RESOLUTION) * GRID_RESOLUTION;
-  };
+  useEffect(() => {
+    let timeout = setTimeout(() => navigate("/home"), 10000);
 
-  const handleAddPoint = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!editMode) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const point = {
-      x: snapToGrid(e.clientX - rect.left),
-      y: snapToGrid(e.clientY - rect.top),
+    const resetTimer = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => navigate("/home"), 10000);
     };
 
-    if (editModeType === "table") {
-      const newTable: Table = {
-        id: customId ?? getNextId(),
-        x: point.x - 30,
-        y: point.y - 30,
-        z: selectedZone,
-        state: "available",
-      };
-      setTables((prev) => [...prev, newTable]);
-      setCustomId(null);
-    } else if (editModeType === "object") {
-      const newPoints = [...objectPoints, point];
-      if (newPoints.length === 2) {
-        setObjects((prev) => [
-          ...prev,
-          {
-            name: objectName || "Unnamed",
-            x1: newPoints[0].x,
-            y1: newPoints[0].y,
-            x2: newPoints[1].x,
-            y2: newPoints[1].y,
-            z: selectedZone,
-          },
+    window.addEventListener("touchstart", resetTimer);
+
+    return () => {
+      clearTimeout(timeout);
+      window.removeEventListener("touchstart", resetTimer);
+    };
+  }, [navigate]);
+
+
+
+
+
+  //FETCH ZONES FROM API
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [zoneData, tableData, objectData] = await Promise.all([
+          fetchZones(),
+          fetchTables(),
+          fetchObjects()
         ]);
-        setObjectPoints([]);
-        setObjectName("");
-      } else {
-        setObjectPoints(newPoints);
+
+        setZones(zoneData);
+        setTables(tableData);
+        const highestTableNumber = Math.max(0, ...tableData.map(t => t.table_number));
+        setNewTableNumber(highestTableNumber + 1);
+        setObjects(objectData);
+
+        if (zoneData.length > 0) setActiveZone(zoneData[0].zone_id);
+      } catch (error) {
+        console.error("Error loading data:", error);
       }
-    }
-  };
+    };
 
-  const handleCycleState = (id: number) => {
-    if (editMode) return;
-    setTables((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, state: getNextState(t.state) } : t))
-    );
-  };
+    loadData();
+  }, []);
 
-  const getNextState = (state: TableState): TableState => {
-    const order: TableState[] = ["available", "ordering", "reserved", "occupied"];
-    return order[(order.indexOf(state) + 1) % order.length];
-  };
+  
+
+
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <div className="flex space-x-3">
+        <div className="flex h-full space-x-3">
           {zones.map((zone) => (
             <button
-              key={zone}
-              onClick={() => setSelectedZone(zone)}
-              className={`w-40 h-20 rounded-full text-lg font-semibold shadow ${
-                selectedZone === zone
+              key={zone.zone_id}
+              onClick={async () => {
+                if (!editMode) {
+                  setActiveZone(zone.zone_id);
+                  return;
+                }
+
+                try {
+                const tablesToDelete = tables.filter(t => t.zone_id === zone.zone_id);
+                const objectsToDelete = objects.filter(o => o.zone_id === zone.zone_id);
+
+                for (const table of tablesToDelete) {
+                  await deleteTable(table.table_id);
+                }
+
+                // Add this after defining deleteObject in your API:
+                for (const object of objectsToDelete) {
+                  await deleteObject(object.object_id);
+                }
+
+                await deleteZone(zone.zone_id);
+
+                const [updatedZones, updatedTables, updatedObjects] = await Promise.all([
+                  fetchZones(),
+                  fetchTables(),
+                  fetchObjects()
+                ]);
+
+                setZones(updatedZones);
+                setTables(updatedTables);
+                setObjects(updatedObjects);
+
+
+                  setZones(updatedZones);
+                  setTables(updatedTables);
+
+                  if (zone.zone_id === activeZone) {
+                    setActiveZone(null);
+                  }
+                } catch (err) {
+                  console.error("Failed to delete zone:", err);
+                }
+              }}
+              className={`px-6 py-3 text-xl rounded-full  shadow ${
+                activeZone === zone.zone_id
                   ? "bg-[var(--color-primary)] text-white"
-                  : "text-[var(--color-primary)] bg-[var(--color-background)] border border-[var(--color-primary)] opacity-70"
-              } hover:opacity-100 transition`}
+                  : "bg-white text-[var(--color-primary)] border"
+              }`}
+
             >
-              {zone}
+              {zone.zone_name}
             </button>
           ))}
         </div>
 
         <div className="flex items-center space-x-2">
-          <label className="text-sm font-medium">Edit Mode</label>
+          <label className="text-sm font-medium">Edit</label>
           <input
             type="checkbox"
+            className="w-5 h-5"
             checked={editMode}
             onChange={(e) => setEditMode(e.target.checked)}
-            className="w-5 h-5"
           />
         </div>
       </div>
 
       {editMode && (
-        <div className="flex flex-col space-y-2 mt-4">
-          <div className="flex space-x-4 items-center">
-            <label className="text-sm font-medium">Action:</label>
+        <div className="space-y-4">
+          <div className="flex space-x-2">
+            <input
+              type="text"
+              placeholder="New zone name"
+              className="border p-2 rounded"
+              value={newZoneName}
+              onChange={(e) => setNewZoneName(e.target.value)}
+            />
+            <button
+              className="bg-blue-600 text-white px-4 py-2 rounded shadow"
+              onClick={async () => {
+                if (!newZoneName.trim()) return;
+
+                try {
+                  await createZone(newZoneName.trim());
+                  const updatedZones = await fetchZones();
+                  setZones(updatedZones);
+                  setNewZoneName("");
+                } catch (err) {
+                  console.error("Failed to create zone:", err);
+                }
+              }}
+            >
+              Add Zone
+            </button>
+          </div>
+
+
+          <div className="flex space-x-4">
             <label>
               <input
                 type="radio"
-                name="editModeType"
-                value="table"
-                checked={editModeType === "table"}
-                onChange={() => setEditModeType("table")}
+                name="editType"
+                checked={editType === "table"}
+                onChange={() => setEditType("table")}
               />
-              <span className="ml-1">Add Table</span>
+              <span className="ml-1">Dodaj Sto</span>
             </label>
             <label>
               <input
                 type="radio"
-                name="editModeType"
-                value="object"
-                checked={editModeType === "object"}
-                onChange={() => setEditModeType("object")}
+                name="editType"
+                checked={editType === "object"}
+                onChange={() => setEditType("object")}
               />
-              <span className="ml-1">Add Object</span>
+              <span className="ml-1">Dodaj Objekat</span>
             </label>
           </div>
 
-          {editModeType === "table" && (
-            <div className="flex items-center space-x-2">
-              <label className="text-sm">New Table ID:</label>
-              <input
-                type="number"
-                value={customId ?? getNextId()}
-                onChange={(e) => setCustomId(parseInt(e.target.value, 10))}
-                className="border p-2 rounded w-28"
-              />
-            </div>
-          )}
+          <div className="flex space-x-2 items-center">
+            <label>Broj Stola:</label>
+            <input
+              type="number"
+              className="border p-2 rounded w-24"
+              placeholder={`${newTableNumber}`}
+              value={isNaN(newTableNumber) ? "" : newTableNumber}
+              onChange={(e) => {
+                const value = e.target.value;
+                setNewTableNumber(value === "" ? NaN : Number(value));
+              }}
+            />
 
-          {editModeType === "object" && (
-            <div className="flex items-center space-x-2">
-              <label className="text-sm">Object Name:</label>
-              <input
-                type="text"
-                value={objectName}
-                onChange={(e) => setObjectName(e.target.value)}
-                className="border p-2 rounded w-40"
-              />
-            </div>
-          )}
+          </div>
+
+          <div className="flex space-x-2 items-center">
+            <label>Ime Objekta:</label>
+            <input
+              type="text"
+              className="border p-2 rounded"
+              value={objectName}
+              onChange={(e) => setObjectName(e.target.value)}
+              placeholder="Object Name"
+            />
+          </div>
         </div>
       )}
 
       <div
-        className="relative w-full h-[500px] bg-[var(--color-background)] border rounded"
-        onClick={handleAddPoint}
+        className="relative w-full h-[60vh] bg-gray-100 border rounded"
+        onClick={async (e) => {
+        if (!editMode || activeZone === null) return;
+
+        const rect = e.currentTarget.getBoundingClientRect();
+        const gridSize = 70;
+        const rawX = e.clientX - rect.left;
+        const rawY = e.clientY - rect.top;
+
+        const x = Math.round(rawX / gridSize) * gridSize;
+        const y = Math.round(rawY / gridSize) * gridSize;
+
+
+        if (editType === "table") {
+          try {
+            const tableNumberToUse = isNaN(newTableNumber)
+              ? Math.max(0, ...tables.map(t => t.table_number)) + 1
+              : newTableNumber;
+
+            await createTable(activeZone, tableNumberToUse, x, y);
+            const updatedTables = await fetchTables();
+            setTables(updatedTables);
+
+            // Optionally update to next available number for convenience
+            const nextTableNumber = Math.max(0, ...updatedTables.map(t => t.table_number)) + 1;
+            setNewTableNumber(nextTableNumber);
+          } catch (err) {
+            console.error("Failed to create table:", err);
+          }
+        }
+
+
+        if (editType === "object") {
+          /*if (!objectName.trim()) {
+            console.warn("Object name is required.");
+            return;
+          }*/
+
+          const newPoint = { x, y };
+          const updatedPoints = [...objectClickPoints, newPoint];
+
+          if (updatedPoints.length === 2) {
+            const sanitize = (val: number) => Math.round(val / gridSize) * gridSize;
+
+            const [{ x: x1Raw, y: y1Raw }, { x: x2Raw, y: y2Raw }] = updatedPoints;
+            const x1 = sanitize(x1Raw);
+            const y1 = sanitize(y1Raw);
+            const x2 = sanitize(x2Raw);
+            const y2 = sanitize(y2Raw);
+
+
+            try {
+              await createObject(activeZone, objectName.trim(), x1, y1, x2, y2);
+              const updatedObjects = await fetchObjects();
+              setObjects(updatedObjects);
+              setObjectClickPoints([]); // reset points
+              setObjectName(""); // optional: reset name
+            } catch (err) {
+              console.error("Failed to create object:", err);
+            }
+          } else {
+            setObjectClickPoints(updatedPoints);
+          }
+        }
+      }}
+
       >
-        {tables
-          .filter((t) => t.z === selectedZone)
-          .map((table) => (
-            <div
-              key={table.id}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCycleState(table.id);
-              }}
-              className={`absolute w-[60px] h-[60px] rounded-full text-white font-bold flex items-center justify-center cursor-pointer shadow-md ${stateColors[table.state]}`}
-              style={{ left: table.x, top: table.y }}
-              title={`Table ${table.id} (${table.state})`}
-            >
-              {table.id}
-            </div>
-          ))}
 
         {objects
-          .filter((obj) => obj.z === selectedZone)
-          .map((obj, index) => {
-            const left = Math.min(obj.x1, obj.x2);
-            const top = Math.min(obj.y1, obj.y2);
+          .filter((obj) => obj.zone_id === activeZone)
+          .map((obj) => {
+            const x = Math.min(obj.x1, obj.x2);
+            const y = Math.min(obj.y1, obj.y2);
             const width = Math.abs(obj.x2 - obj.x1);
             const height = Math.abs(obj.y2 - obj.y1);
+
             return (
               <div
-                key={index}
-                className="absolute bg-gray-400 bg-opacity-60 border border-gray-700 text-xs flex items-center justify-center shadow-sm"
-                style={{ left, top, width, height }}
-                title={obj.name}
+                key={obj.object_id}
+                className="absolute bg-yellow-400 text-xs text-black px-1 py-0.5 rounded shadow border"
+                style={{
+                  left: `${x}px`,
+                  top: `${y}px`,
+                  width: `${width}px`,
+                  height: `${height}px`,
+                  transform: "translate(0, 0)",
+                }}
+                onClick={async (e) => {
+                  e.stopPropagation(); // prevent canvas click
+                  if (!editMode) return;
+
+                  try {
+                    await deleteObject(obj.object_id);
+                    const updatedObjects = await fetchObjects();
+                    setObjects(updatedObjects);
+                  } catch (err) {
+                    console.error("Failed to delete object:", err);
+                  }
+                }}
               >
-                {obj.name}
+                {obj.object_name}
               </div>
             );
           })}
+
+
+
+        {tables
+          .filter((table) => table.zone_id === activeZone)
+          .map((table) => (
+            <div
+              key={table.table_id}
+              className="absolute bg-green-500 text-white rounded-full flex items-center justify-center shadow cursor-pointer"
+              style={{
+                width: "60px",
+                height: "60px",
+                left: `${table.x}px`,
+                top: `${table.y}px`,
+                transform: "translate(-50%, -50%)",
+              }}
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (!editMode) {
+                  setSelectedTableNumber(table.table_number);
+                  return;
+                }
+                try {
+                  await deleteTable(table.table_id);
+                  const updatedTables = await fetchTables();
+                  setTables(updatedTables);
+                } catch (err) {
+                  console.error("Failed to delete table:", err);
+                }
+              }}
+
+            >
+              {table.table_number}
+            </div>
+        ))}
+
       </div>
 
       <div className="flex justify-center gap-6">
-        {Object.entries(stateColors).map(([state, color]) => (
-          <div key={state} className="flex items-center space-x-2">
-            <div className={`w-4 h-4 ${color} rounded-full`} />
-            <span className="capitalize text-sm text-gray-600">{state}</span>
-          </div>
-        ))}
+        {/* State legend placeholder */}
       </div>
+
+
+      {selectedTableNumber !== null && (
+        <TableInfoOverlay
+          tableNumber={selectedTableNumber}
+          onClose={() => setSelectedTableNumber(null)}
+        />
+      )}
+
     </div>
   );
 };
 
-export default TableManager;
+export default TableDash;

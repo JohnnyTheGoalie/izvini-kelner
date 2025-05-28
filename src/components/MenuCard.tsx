@@ -1,16 +1,40 @@
-// menucard.tsx
+// MenuCard.tsx
 import React, { useState } from "react";
 
 interface MenuCardProps {
   name: string;
   initiallyAvailable: boolean;
+  itemId: number;
+  isAddon?: boolean;
 }
 
-const MenuCard: React.FC<MenuCardProps> = ({ name, initiallyAvailable }) => {
+const MenuCard: React.FC<MenuCardProps> = ({ name, initiallyAvailable, itemId, isAddon = false }) => {
   const [isAvailable, setIsAvailable] = useState(initiallyAvailable);
 
-  const toggleAvailability = () => {
-    setIsAvailable(!isAvailable);
+  const toggleAvailability = async () => {
+    const newStatus = !isAvailable;
+    const endpoint = isAddon
+      ? `http://46.240.186.243:8000/kelner/admin/change_addon_status?addon_id=${itemId}&is_available=${newStatus}`
+      : `http://46.240.186.243:8000/kelner/admin/change_menu_item_status?item_id=${itemId}&is_available=${newStatus}`;
+
+    try {
+      const token = localStorage.getItem("authToken");
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to toggle availability");
+      }
+
+      setIsAvailable(newStatus);
+    } catch (err) {
+      console.error("Error toggling availability:", err);
+    }
   };
 
   return (
@@ -24,7 +48,7 @@ const MenuCard: React.FC<MenuCardProps> = ({ name, initiallyAvailable }) => {
             : "bg-red-600 hover:bg-red-700"
         }`}
       >
-        {isAvailable ? "Mark Unavailable" : "Mark Available"}
+        {isAvailable ? "Označi kao nedostupno" : "Označi kao dostupno"}
       </button>
     </div>
   );
